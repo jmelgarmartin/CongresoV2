@@ -142,3 +142,5 @@ cython_debug/
 pruebas.csv
 dialogos.pickle
 palabras.pickle
+*.gexf
+*.html

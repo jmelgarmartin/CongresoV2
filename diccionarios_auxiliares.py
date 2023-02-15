@@ -292,7 +292,7 @@ dict_hablantes = {
     'laseñoraalvarezdetoledoperaltaramos': {'nombre': 'Álvarez de Toledo Peralta-Ramos, Cayetana',
                                             'grupo parlamentario': 'Grupo Parlamentario Popular en el Congreso'},
     'laseñoraalvarezdetoledoperalta\xadramos': {'nombre': 'Álvarez de Toledo Peralta-Ramos, Cayetana',
-                                                 'grupo parlamentario': 'Grupo Parlamentario Popular en el Congreso'},
+                                                'grupo parlamentario': 'Grupo Parlamentario Popular en el Congreso'},
     'elseñorbalfrances': {'nombre': 'Bal Francés, Edmundo',
                           'grupo parlamentario': 'Grupo Parlamentario Ciudadanos'},
     'elseñorbalfrancés': {'nombre': 'Bal Francés, Edmundo',
@@ -647,6 +647,8 @@ dict_hablantes = {
                             'grupo parlamentario': 'Grupo Parlamentario Popular en el Congreso'},
     'elseñorlopezalvarez': {'nombre': 'López Álvarez, Patxi',
                             'grupo parlamentario': 'Grupo Parlamentario Socialista'},
+    'elseñorlopezavarez': {'nombre': 'López Álvarez, Patxi',
+                           'grupo parlamentario': 'Grupo Parlamentario Socialista'},
     'laseñoracañadellsalvia': {'nombre': 'Cañadell Salvia, Concep',
                                'grupo parlamentario': 'Grupo Parlamentario Plural'},
     'elseñordiazgomez': {'nombre': 'Díaz Gómez, Guillermo',
@@ -702,6 +704,8 @@ dict_hablantes = {
     'laseñoraborrasegea': {'nombre': 'Borrás Pabón, Mireia',
                            'grupo parlamentario': 'Grupo Parlamentario VOX'},
     'laseñorarodriguezherrer': {'nombre': 'Rodríguez Herrer, María Elvira',
+                                'grupo parlamentario': 'Grupo Parlamentario Popular en el Congreso'},
+    'laseñorarodriguerherrer': {'nombre': 'Rodríguez Herrer, María Elvira',
                                 'grupo parlamentario': 'Grupo Parlamentario Popular en el Congreso'},
     'laseñoramoralejagomez': {'nombre': 'Moraleja Gómez, Tristana María',
                               'grupo parlamentario': 'Grupo Parlamentario Popular en el Congreso'},
@@ -1386,4 +1390,34 @@ dict_hablantes = {
         {'nombre': 'Zapico González, Ovidio', 'grupo parlamentario': 'Parlamento del principado de Asturias'},
     'elseñorrepresentantedelajuntageneraldelprincipadodeasturias(mariripa)':
         {'nombre': 'Marí Ripa, Daniel', 'grupo parlamentario': 'Parlamento del principado de Asturias'},
+    'laseñoragarciagurruchaga':
+        {'nombre': 'García Gurrutxaga, María Luisa ', 'grupo parlamentario': 'Grupo Parlamentario Socialista'},
+    'elseñorrepresentantedelparlamentodecanarias(alvarolavandera)':
+        {'nombre': 'Álvaro Lavandera, Iñaki', 'grupo parlamentario': 'Parlamento del principado de Canarias'},
+    'elseñorrepresentantedelparlamentodecanarias(dominguezgonzalez)':
+        {'nombre': 'Domínguez González, Manueli', 'grupo parlamentario': 'Parlamento del principado de Canarias'},
+    'laseñorarepresentantedelparlamentodecanarias(davilamamely)':
+        {'nombre': 'Dávila Mamely, Rosa Elena', 'grupo parlamentario': 'Parlamento del principado de Canarias'},
 }
+
+dict_abreviaturas_grupos = {
+    'Grupo Parlamentario Ciudadanos': 'GCs',
+    'Grupo Parlamentario Confederal de Unidas Podemos-En Comú Podem-Galicia en Común': 'GCUP-EC-GC',
+    'Grupo Parlamentario Euskal Herria Bildu': 'GEH-Bildu',
+    'Grupo Parlamentario Mixto': 'GMx',
+    'Grupo Parlamentario Plural': 'GPlu',
+    'Grupo Parlamentario Popular en el Congreso': 'GP',
+    'Grupo Parlamentario Republicano': 'GR',
+    'Grupo Parlamentario Socialista': 'GS',
+    'Grupo Parlamentario VOX': 'GVOX',
+    'Grupo Parlamentario Vasco (EAJ-PNV)': 'GV-(EAJ-PNV)',
+}
+
+colores_grupos = {
+    'Grupo Parlamentario Ciudadanos': '#FF571F',
+    'Grupo Parlamentario Confederal de Unidas Podemos-En Comú Podem-Galicia en Común': '#693279',
+    'Grupo Parlamentario Popular en el Congreso': '#184A90',
+    'Grupo Parlamentario Socialista': '#DC0612',
+    'Grupo Parlamentario VOX': '#63BE21'
+}
+color_otro = '#ACB0B2'

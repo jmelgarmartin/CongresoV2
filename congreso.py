@@ -13,6 +13,7 @@ from py2neo import Graph
 from diccionarios_auxiliares import correccion_inicio, excepciones_texto, excluidos, dict_hablantes, \
     documentos_sin_dialogos
 import textstat
+import Analitica
 
 
 def ls(ruta=getcwd() + '\\documentos'):
@@ -244,7 +245,7 @@ def lemmatizar(parametros):
                tok.pos_,
                num_discurso,
                i
-               ] for i, tok in enumerate(doc) if (tok.pos_ not in ['PRON', 'ADP', 'DET', 'SCONJ', 'CCONJ']) &
+               ] for i, tok in enumerate(doc) if (tok.pos_ not in ['PRON', 'ADP', 'DET', 'SCONJ', 'CCONJ', 'SPACE']) &
               (not tok.is_punct | tok.is_stop)]
 
     contador = contador + 1
@@ -284,26 +285,6 @@ def insertar_lemma(row):
         pol=row['polaridad'],
         pol_round=row['polaridad_redondeada']
     ).stats()['nodes_created']
-
-
-def insertar_relacion_dice(row):
-    # Conexion a la base de datos Neo4j
-    graph = row['graph']
-
-    # Insertar nodo
-    return graph.run(
-        'MATCH (n:Hablante) \
-         MATCH (p:Palabra) \
-         WHERE n.nombre =  $nombre \
-         AND p.lemma = $lemma \
-         CREATE (n)-[r:DICE {fecha: $fecha, veces: $veces, grupo_parlamentario: $grupo}]->(p) \
-         RETURN COUNT(r)',
-        nombre=row['hablante'],
-        lemma=row['lemma'],
-        fecha=row['fecha'],
-        veces=row['num_palabras'],
-        grupo=row['grupo parlamentario']
-    ).stats()['relationships_created']
 
 
 def obtener_metrica_szigriszt_pazos(discurso):
@@ -363,6 +344,7 @@ def generar_dialogos(dialogos):
         with open(dialogos, "wb") as f:
             pickle.dump(dialogos_completos, f)
 
+    print(str(datetime.now()) + ' ' + 'Diálogos Generados')
     return dialogos_completos
 
 
@@ -383,15 +365,16 @@ def generar_lemmas(palabras_lemm, dialogos_completos):
             for f in results:
                 df_lemmas = pd.concat([df_lemmas, f.result()], axis=0)
             df_lemmas['lemma'] = df_lemmas['lemma'].str.lower()
-            #Eiminamos los espacios sueltos
+            # Eiminamos los espacios sueltos
             df_lemmas['lemma'].fillna(' ', inplace=True)
             df_lemmas = df_lemmas[df_lemmas['lemma'] != ' ']
 
         print(str(datetime.now()) + ' ' + 'salvando lemmas')
         with open(palabras_lemm, "wb") as f:
             pickle.dump(df_lemmas, f)
-        print(str(datetime.now()) + ' ' + 'lemmas salvandos')
+        print(str(datetime.now()) + ' ' + 'lemmas salvados')
 
+    print(str(datetime.now()) + ' ' + 'Lemmas Generados')
     return df_lemmas
 
 
@@ -410,10 +393,20 @@ def generar_df_agrupado(df_lemmas):
         'palabra'].apply(list).reset_index()
     df_agrupado['num_palabras'] = df_agrupado['palabra'].apply(len)
     df_agrupado['palabras agrupadas'] = df_agrupado['palabra'].apply(lambda x: list(dict.fromkeys(x)))
+    # Seleccionamos las 20 palabras más dichas para elminarlas
+    df_grouped = df_agrupado.groupby(['lemma'])['num_palabras'].sum().reset_index()
+    df_grouped.sort_values(by='num_palabras', ascending=False, inplace=True)
+    top_20_lemmas = df_grouped.head(20)
+    df_agrupado = df_agrupado[~df_agrupado['lemma'].isin(top_20_lemmas['lemma'])]
+    # elminiamos las palabras que se dicén 3 veces o menos
+    palabras_menos_dichas = df_grouped[df_grouped['num_palabras'] <= 3]
+    df_agrupado = df_agrupado[~df_agrupado['lemma'].isin(palabras_menos_dichas['lemma'])]
+    print('20 Lemmas más repetidos:')
+    print(top_20_lemmas)
     print(str(datetime.now()) + ' ' + 'registros df_agrupado: ' + str(len(df_agrupado)))
 
     # descartamos los valores atípicos
-    #voy a cancelar esto, para poner todas las palabras
+    # voy a cancelar esto, para poner todas las palabras
     '''
     df_sin_atipicos = df_agrupado[['hablante', 'lemma', 'num_palabras', 'fecha']].groupby(['lemma']).agg(
         {'num_palabras': sum}).reset_index()
@@ -432,7 +425,7 @@ def generar_df_agrupado(df_lemmas):
     df_agrupado = pd.merge(df_agrupado, df_sin_atipicos, on='lemma')
     print(str(datetime.now()) + ' ' + 'Nueva longitud df_agrupado: ' + str(len(df_sin_atipicos)))
     '''
-    return df_agrupado
+    return df_agrupado, top_20_lemmas, palabras_menos_dichas
 
 
 def generar_lemmas_unicos(df_agrupado):
@@ -482,8 +475,29 @@ def insertar_hablantes_Neo4j(graph, df_hablantes_unicos):
     print(df_resultados_hablantes[df_resultados_hablantes['resultado'] != 1].to_string())
 
 
+def insertar_relacion_dice(row):
+    # Conexion a la base de datos Neo4j
+    graph = row['graph']
+
+    # Insertar nodo
+    return graph.run(
+        'MATCH (n:Hablante) \
+         MATCH (p:Palabra) \
+         WHERE n.nombre =  $nombre \
+         AND p.lemma = $lemma \
+         CREATE (n)-[r:DICE {fecha: $fecha, veces: $veces, grupo_parlamentario: $grupo}]->(p) \
+         RETURN COUNT(r)',
+        nombre=row['hablante'],
+        lemma=row['lemma'],
+        fecha=row['fecha'],
+        veces=row['num_palabras'],
+        grupo=row['grupo parlamentario']
+    ).stats()['relationships_created']
+
+
 def insertar_relacion_DICE_Neo4j(graph, df_agrupado):
-    df_relaciones = df_agrupado[['hablante', 'lemma', 'num_palabras', 'fecha', 'grupo parlamentario']]
+    df_relaciones = df_agrupado.groupby(['hablante', 'grupo parlamentario', 'fecha', 'lemma'])[
+        'num_palabras'].sum().reset_index()
     df_relaciones['graph'] = graph
     print('Relaciones totales: ' + str(len(df_relaciones)))
     print(str(datetime.now()) + ' ' + 'Inserta Relacion DICE')
@@ -496,12 +510,62 @@ def insertar_relacion_DICE_Neo4j(graph, df_agrupado):
     print(df_relaciones[df_relaciones['resultado'] != 1].to_string())
 
 
+def insertar_relacion_discurso(row):
+    # Conexion a la base de datos Neo4j
+    graph = row['graph']
+    # Insertar nodo
+    return graph.run(
+        'MATCH (p1:Palabra) \
+         MATCH (p2:Palabra) \
+         WHERE p1.lemma = $lemma_orig \
+         AND p2.lemma = $lemma_dest \
+         CREATE (p1)-[r:DISCURSO {grupo_parlamentario: $grupo, hablante:$hablante, \
+         fecha:$fecha, num_discruso:$num_discurso, orden:$orden}]->(p2) \
+         RETURN COUNT(r)',
+        lemma_orig=row['lemma'],
+        lemma_dest=row['lemma_siguiente'],
+        grupo=row['grupo parlamentario'],
+        hablante=row['hablante'],
+        fecha=row['fecha'],
+        num_discurso=row['numero_discurso'],
+        orden=row['orden'],
+    ).stats()['relationships_created']
+
+
+def insertar_relacion_DISCURSO_Neo4j(graph, df_lemmas, top_20_lemmas, palabras_menos_dichas):
+    # eliminamos las 20 palabras más dichas
+    df_lemmas = df_lemmas[~df_lemmas['lemma'].isin(top_20_lemmas['lemma'])]
+    # eliminamos las palabras que se dicen 3 veces o menos
+    df_lemmas = df_lemmas[~df_lemmas['lemma'].isin(palabras_menos_dichas['lemma'])]
+
+    df_lemmas.sort_values(by=['hablante', 'grupo parlamentario', 'fecha', 'numero_discurso', 'orden', 'lemma'],
+                          inplace=True, ascending=True)
+    df_ordenado = df_lemmas.groupby(['hablante', 'grupo parlamentario', 'fecha', 'numero_discurso'], group_keys=False)
+    df_ordenado = df_ordenado.apply(lambda x: x.assign(lemma_siguiente=x['lemma'].shift(-1)))
+    df_discursos = df_ordenado[
+        ['hablante', 'grupo parlamentario', 'fecha', 'numero_discurso', 'lemma', 'lemma_siguiente', 'orden']]
+    df_discursos = df_discursos[~df_discursos['lemma_siguiente'].isnull()]
+    df_discursos['graph'] = graph
+
+    print('Numero de Relaciones DISCURSO: ' + str(len(df_discursos)))
+    print(str(datetime.now()) + ' ' + 'INICIO Inserta Relacion DISCURSO')
+    results = []
+    for i in range(0, len(df_discursos), 1000):
+        if i % 1000000 == 0:
+            print(i)
+        block = df_discursos[i:i + 1000]
+        results.extend(block.apply(insertar_relacion_discurso, axis=1).tolist())
+    df_discursos['resultado'] = results
+    print(str(datetime.now()) + ' ' + 'FIN Inserta Relacion DISCURSO')
+    print(df_discursos[df_discursos['resultado'] != 1].to_string())
+
+
 def main():
     dialogos = 'dialogos.pickle'
     palabras_lemm = 'palabras.pickle'
     textstat.set_lang('es')
     graph = Graph("bolt://localhost:7687", auth=("neo4j", "congreso"))
-    graph.delete_all()
+
     graph.run('CREATE TEXT INDEX I_hablante IF NOT EXISTS FOR (h:Hablante) ON (h.nombre)')
     graph.run('CREATE TEXT INDEX I_palabra IF NOT EXISTS FOR (p:Palabra) ON (p.lemma)')
 
@@ -511,15 +575,14 @@ def main():
 
     df_lemmas = generar_lemmas(palabras_lemm, dialogos_completos)
 
-    df_agrupado = generar_df_agrupado(df_lemmas)
+    #Esto es una chapuza y si puedo reescribiré el código
+    df_agrupado, top_20_lemmas, palabras_menos_dichas = generar_df_agrupado(df_lemmas)
 
     df_lemmas_unicos = generar_lemmas_unicos(df_agrupado)
-
 
     insertar_lemma_Neo4j(graph, df_lemmas_unicos)
 
     df_hablantes_unicos = generar_hablantes_unicos(df_agrupado)
-
 
     insertar_hablantes_Neo4j(graph, df_hablantes_unicos)
 
@@ -528,15 +591,11 @@ def main():
 
     insertar_relacion_DICE_Neo4j(graph, df_agrupado)
 
+    insertar_relacion_DISCURSO_Neo4j(graph, df_lemmas, top_20_lemmas, palabras_menos_dichas)
 
-
-    df_lemmas.sort_values(by=['hablante', 'grupo parlamentario', 'fecha', 'numero_discurso', 'orden', 'lemma'],
-                          inplace=True, ascending=True)
-    df_ordenado = df_lemmas.groupby(['hablante', 'grupo parlamentario', 'fecha', 'numero_discurso'], group_keys=True)
-    df_ordenado = df_ordenado.apply(lambda x: x.assign(lemma_siguiente=x['lemma'].shift(-1)))
-
-    print('Numero de Relaciones DISCURSO: ' + str(len(df_ordenado)))
     print('PROCESO TERMINADO')
+
+    Analitica.main(False)
 
 
 if __name__ == '__main__':
@@ -580,6 +639,151 @@ match (h:Hablante)-[d:DICE]->(p:Palabra)
 WITH p, COUNT(d) as num
 WHERE num = 1
 RETURN COUNT(p), max(p.pagerank_DICE)
+
+CALL gds.graph.project(
+  'pageRank_DISCURSO',
+  ['Palabra'],
+  'DISCURSO'
+)
+
+CALL gds.pageRank.write('pageRank_DISCURSO', {
+  maxIterations: 20,
+  dampingFactor: 0.85,
+  writeProperty: 'pagerank_DISCURSO'
+})
+YIELD nodePropertiesWritten, ranIterations
+
+CALL gds.louvain.write('pageRank_DISCURSO', {
+  writeProperty: 'Communities',
+  includeIntermediateCommunities: true,
+  maxIterations: 1000
+})
+YIELD communityCount, modularity, modularities
+
+
+CALL gds.graph.project.cypher(
+  'discurso_VOX',
+  'MATCH (p:Palabra) RETURN id(p) AS id',
+  'MATCH (p:Palabra)-[r:DISCURSO]->(p2:Palabra) WHERE r.grupo_parlamentario = "Grupo Parlamentario VOX" RETURN id(p) AS source, id(p2) AS target')
+YIELD
+  graphName AS graph, nodeQuery, nodeCount AS nodes, relationshipQuery, relationshipCount AS rels
+  
+
+CALL gds.louvain.write('discurso_VOX', {
+  writeProperty: 'Communities_VOX',
+  includeIntermediateCommunities: true,
+  maxIterations: 1000
+})
+YIELD communityCount, modularity, modularities
+
+
+MATCH (p:Palabra)
+UNWIND p.Communities AS comunidad
+RETURN p.lemma, comunidad
+limit 10
+
+MATCH (p:Palabra)
+UNWIND p.Communities_2023_02_09 AS comunidad
+WITH p.lemma as palabra, comunidad
+return comunidad, count(palabra) as num 
+order by num desc
+limit 10
+
+
+-------estudios por fechas
+  
+CALL gds.graph.project.cypher(
+  'DICE_2023-02-09',
+  'MATCH (n) RETURN id(n) AS id, labels(n) as labels',
+  'MATCH (h:Hablante)-[d:DICE]->(p:Palabra) WHERE d.fecha = "2023-02-09" RETURN id(h) AS source, id(p) AS target, type(d) AS type, d.veces as veces')
+YIELD
+  graphName AS graph, nodeQuery, nodeCount AS nodes, relationshipQuery, relationshipCount AS rels
+
+
+CALL gds.pageRank.write('DICE_2023-02-09', {
+  maxIterations: 20,
+  dampingFactor: 0.85,
+  writeProperty: 'pagerank_DICE_2023_02_09',
+  relationshipWeightProperty: 'veces'
+})
+YIELD nodePropertiesWritten, ranIterations
+
+CALL gds.louvain.write('DICE_2023-02-09', {
+  writeProperty: 'Communities_2023_02_09',
+  includeIntermediateCommunities: false,
+  maxIterations: 1000
+})
+YIELD communityCount, modularity, modularities
+
+CALL gds.graph.project.cypher(
+  'DISCURSO_2023-02-09_VOX',
+  'MATCH (n) RETURN id(n) AS id, labels(n) as labels',
+  'MATCH (p1:Palabra)-[d:DISCURSO]->(p2:Palabra) WHERE d.fecha = "2023-02-09" AND d.grupo_parlamentario = "Grupo Parlamentario VOX" RETURN id(p1) AS source, id(p2) AS target, type(d) AS type')
+YIELD
+  graphName AS graph, nodeQuery, nodeCount AS nodes, relationshipQuery, relationshipCount AS rels
+  
+CALL gds.graph.project.cypher(
+  'DICE_2023-02-09_VOX',
+  'MATCH (n) RETURN id(n) AS id, labels(n) as labels',
+  'MATCH (h:Hablante)-[d:DICE]->(p:Palabra) WHERE d.fecha = "2023-02-09" AND d.grupo_parlamentario = "Grupo Parlamentario VOX" RETURN id(h) AS source, id(p) AS target, type(d) AS type, d.veces as veces')
+YIELD
+  graphName AS graph, nodeQuery, nodeCount AS nodes, relationshipQuery, relationshipCount AS rels
+  
+CALL gds.pageRank.write('DICE_2023-02-09_VOX', {
+  maxIterations: 20,
+  dampingFactor: 0.85,
+  writeProperty: 'pagerank_DICE_2023_02_09_VOX',
+  relationshipWeightProperty: 'veces'
+})
+YIELD nodePropertiesWritten, ranIterations
+
+CALL gds.louvain.write('DISCURSO_2023-02-09_VOX', {
+  writeProperty: 'Communities_2023_02_09_VOX',
+  includeIntermediateCommunities: false,
+  maxIterations: 1000
+})
+YIELD communityCount, modularity, modularities
+
+
+CALL gds.graph.project.cypher(
+  'DICE_2023-02-09_PODEMOS',
+  'MATCH (n) RETURN id(n) AS id, labels(n) as labels',
+  'MATCH (h:Hablante)-[d:DICE]->(p:Palabra) WHERE d.fecha = "2023-02-09" AND d.grupo_parlamentario = "Grupo Parlamentario Confederal de Unidas Podemos-En Comú Podem-Galicia en Común" RETURN id(h) AS source, id(p) AS target, type(d) AS type, d.veces as veces')
+YIELD
+  graphName AS graph, nodeQuery, nodeCount AS nodes, relationshipQuery, relationshipCount AS rels
+  
+  
+CALL gds.graph.project.cypher(
+  'DISCURSO_2023-02-09_PODEMOS',
+  'MATCH (n) RETURN id(n) AS id, labels(n) as labels',
+  'MATCH (p1:Palabra)-[d:DISCURSO]->(p2:Palabra) WHERE d.fecha = "2023-02-09" AND d.grupo_parlamentario = "Grupo Parlamentario Confederal de Unidas Podemos-En Comú Podem-Galicia en Común" RETURN id(p1) AS source, id(p2) AS target, type(d) AS type')
+YIELD
+  graphName AS graph, nodeQuery, nodeCount AS nodes, relationshipQuery, relationshipCount AS rels
+  
+  
+CALL gds.pageRank.write('DICE_2023-02-09_PODEMOS', {
+  maxIterations: 20,
+  dampingFactor: 0.85,
+  writeProperty: 'pagerank_DICE_2023_02_09_PODEMOS',
+  relationshipWeightProperty: 'veces'
+})
+YIELD nodePropertiesWritten, ranIterations
+
+CALL gds.louvain.write('DISCURSO_2023-02-09_PODEMOS', {
+  writeProperty: 'Communities_2023_02_09_PODEMOS',
+  includeIntermediateCommunities: false,
+  maxIterations: 1000
+})
+YIELD communityCount, modularity, modularities
+
+
+
+
+MATCH (p:Palabra) WHERE p.lemma = 'animal' 
+WITH p.Communities_2023_02_09_PODEMOS AS comunidad
+MATCH (p:Palabra)
+WHERE p.Communities_2023_02_09_PODEMOS = comunidad
+RETURN p.lemma, comunidad
 
 
 
