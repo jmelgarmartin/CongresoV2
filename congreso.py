@@ -8,12 +8,21 @@ import pandas as pd
 import concurrent.futures
 import pickle
 import os
-from sentiment_analysis_spanish import sentiment_analysis
+from textblob import TextBlob
+from translate import Translator
 from py2neo import Graph
 from diccionarios_auxiliares import correccion_inicio, excepciones_texto, excluidos, dict_hablantes, \
     documentos_sin_dialogos
 import textstat
-import Analitica
+
+
+def conecta_neo4j():
+    graph = Graph("bolt://localhost:7687", auth=("neo4j", "congreso"))
+
+    graph.run('CREATE TEXT INDEX I_Hablante IF NOT EXISTS FOR (h:Hablante) ON (h.nombre)')
+    graph.run('CREATE TEXT INDEX I_Palabra IF NOT EXISTS FOR (p:Palabra) ON (p.lemma)')
+
+    return graph
 
 
 def ls(ruta=getcwd() + '\\documentos'):
@@ -259,7 +268,12 @@ def lemmatizar(parametros):
 
 
 def devuelve_polaridad(row):
-    return sentiment.sentiment(row['lemma'])
+    try:
+        #la polaridad va entre -1 y +1
+        return TextBlob(translator.translate(row['lemma'].strip().lower()).strip().lower()).sentiment.polarity
+    except:
+        print(str(datetime.now()) + ' ' + 'Error en palabra: ' + row['lemma'])
+        return 0.0
 
 
 def insertar_hablante(row):
@@ -452,8 +466,10 @@ def insertar_lemma_Neo4j(graph, df_lemmas_unicos):
     print('Lemmas únicos: ' + str(len(df_resultados_lemmas)))
     print(str(datetime.now()) + ' ' + 'Inserta Lemmas')
     results = []
-    for i in range(0, len(df_resultados_lemmas), 1000):
-        block = df_resultados_lemmas[i:i + 1000]
+    for i in range(0, len(df_resultados_lemmas), 10):
+        if (i % 10000) == 0:
+            print(str(datetime.now()) + ' ' + str(i))
+        block = df_resultados_lemmas[i:i + 10]
         results.extend(block.apply(insertar_lemma, axis=1).tolist())
     df_lemmas_unicos['resultado'] = results
     print(str(datetime.now()) + ' ' + 'Fin Inserta Lemmas')
@@ -502,8 +518,10 @@ def insertar_relacion_DICE_Neo4j(graph, df_agrupado):
     print('Relaciones totales: ' + str(len(df_relaciones)))
     print(str(datetime.now()) + ' ' + 'Inserta Relacion DICE')
     results = []
-    for i in range(0, len(df_relaciones), 1000):
-        block = df_relaciones[i:i + 1000]
+    for i in range(0, len(df_relaciones), 10):
+        if i % 1000000 == 0:
+            print(str(datetime.now()) + ' ' + str(i))
+        block = df_relaciones[i:i + 10]
         results.extend(block.apply(insertar_relacion_dice, axis=1).tolist())
     df_relaciones['resultado'] = results
     print(str(datetime.now()) + ' ' + 'FIN Inserta Relacion DICE')
@@ -550,10 +568,10 @@ def insertar_relacion_DISCURSO_Neo4j(graph, df_lemmas, top_20_lemmas, palabras_m
     print('Numero de Relaciones DISCURSO: ' + str(len(df_discursos)))
     print(str(datetime.now()) + ' ' + 'INICIO Inserta Relacion DISCURSO')
     results = []
-    for i in range(0, len(df_discursos), 1000):
+    for i in range(0, len(df_discursos), 10):
         if i % 1000000 == 0:
-            print(i)
-        block = df_discursos[i:i + 1000]
+            print(str(datetime.now()) + ' ' + str(i))
+        block = df_discursos[i:i + 10]
         results.extend(block.apply(insertar_relacion_discurso, axis=1).tolist())
     df_discursos['resultado'] = results
     print(str(datetime.now()) + ' ' + 'FIN Inserta Relacion DISCURSO')
@@ -564,10 +582,8 @@ def main():
     dialogos = 'dialogos.pickle'
     palabras_lemm = 'palabras.pickle'
     textstat.set_lang('es')
-    graph = Graph("bolt://localhost:7687", auth=("neo4j", "congreso"))
 
-    graph.run('CREATE TEXT INDEX I_hablante IF NOT EXISTS FOR (h:Hablante) ON (h.nombre)')
-    graph.run('CREATE TEXT INDEX I_palabra IF NOT EXISTS FOR (p:Palabra) ON (p.lemma)')
+    graph = conecta_neo4j()
 
     dialogos_completos = generar_dialogos(dialogos)
 
@@ -575,7 +591,7 @@ def main():
 
     df_lemmas = generar_lemmas(palabras_lemm, dialogos_completos)
 
-    #Esto es una chapuza y si puedo reescribiré el código
+    # Esto es una chapuza y si puedo reescribiré el código
     df_agrupado, top_20_lemmas, palabras_menos_dichas = generar_df_agrupado(df_lemmas)
 
     df_lemmas_unicos = generar_lemmas_unicos(df_agrupado)
@@ -593,9 +609,7 @@ def main():
 
     insertar_relacion_DISCURSO_Neo4j(graph, df_lemmas, top_20_lemmas, palabras_menos_dichas)
 
-    print('PROCESO TERMINADO')
-
-    Analitica.main(False)
+    print(str(datetime.now()) + ' ' + 'PROCESO TERMINADO')
 
 
 if __name__ == '__main__':
@@ -603,8 +617,8 @@ if __name__ == '__main__':
     contador = 0
     global contador_documentos
     contador_documentos = 0
-    global sentiment
-    sentiment = sentiment_analysis.SentimentAnalysisSpanish()
+    global translator
+    translator = Translator(from_lang='es', to_lang='en')
 
     main()
 
