@@ -10,10 +10,12 @@ import pickle
 import os
 from textblob import TextBlob
 from translate import Translator
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 from py2neo import Graph
 from diccionarios_auxiliares import correccion_inicio, excepciones_texto, excluidos, dict_hablantes, \
     documentos_sin_dialogos
 import textstat
+import dask.dataframe as dd
 
 
 def conecta_neo4j():
@@ -242,7 +244,7 @@ def lemmatizar(parametros):
     global contador
     documento = parametros[0]
     num_discurso = parametros[1]
-    nlp = spacy.load('es_core_news_sm')
+    nlp = spacy.load('es_dep_news_trf')
     doc = nlp(remove_punctuation(documento['discurso'].strip()))
     lemmas = [[tok.lemma_,
                tok.orth_,
@@ -268,11 +270,14 @@ def lemmatizar(parametros):
 
 
 def devuelve_polaridad(row):
+    # como no me fio de los modelos calculamos la polaridad en 2 de ellos y calculamos la media
+    translator = Translator(from_lang='es', to_lang='en')
+    sentiment = SentimentIntensityAnalyzer()
     try:
-        #la polaridad va entre -1 y +1
-        return TextBlob(translator.translate(row['lemma'].strip().lower()).strip().lower()).sentiment.polarity
+        # la polaridad va entre -1 y +1
+        translation = translator.translate(row['lemma'].strip().lower()).strip().lower()
+        return (TextBlob(translation).sentiment.polarity + sentiment.polarity_scores(translation)['compound']) / 2
     except:
-        print(str(datetime.now()) + ' ' + 'Error en palabra: ' + row['lemma'])
         return 0.0
 
 
@@ -452,7 +457,18 @@ def generar_lemmas_unicos(df_agrupado):
     df_lemmas_unicos.sort_values(by=['num_palabras'], inplace=True, ascending=False)
     df_lemmas_unicos = df_lemmas_unicos[['lemma', 'num_palabras', 'palabras agrupadas unicas', 'tipo palabra agg']]
     print(str(datetime.now()) + ' ' + 'polaridad inicio')
-    df_lemmas_unicos['polaridad'] = df_lemmas_unicos.apply(devuelve_polaridad, axis=1)
+    # df_lemmas_unicos['polaridad'] = df_lemmas_unicos.apply(devuelve_polaridad, axis=1)
+
+    # crear un DataFrame Dask a partir del DataFrame de Pandas
+    meta = pd.Series([], dtype='float64')
+    df_dask = dd.from_pandas(df_lemmas_unicos, npartitions=10)
+
+    # aplicar la función devuelve_polaridad en paralelo a cada partición del DataFrame
+    df_dask['polaridad'] = df_dask.map_partitions(lambda df: df.apply(devuelve_polaridad, axis=1), meta=meta)
+
+    # convertir el DataFrame Dask de vuelta a un DataFrame de Pandas
+    df_lemmas_unicos = df_dask.compute()
+
     print(str(datetime.now()) + ' ' + 'polaridad fin')
     df_lemmas_unicos['polaridad_redondeada'] = df_lemmas_unicos['polaridad'].apply(lambda x: round(x, 1))
     return df_lemmas_unicos
@@ -617,8 +633,6 @@ if __name__ == '__main__':
     contador = 0
     global contador_documentos
     contador_documentos = 0
-    global translator
-    translator = Translator(from_lang='es', to_lang='en')
 
     main()
 
